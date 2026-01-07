@@ -5,13 +5,14 @@ import random
 import time
 
 from opentelemetry import trace
+from ddtrace import tracer as dd_tracer  # Datadog 네이티브 tracer
 
 otel_tracer = trace.get_tracer(__name__)
 
 app = FastAPI()
 
 # ---------------------------------------------------------
-# [NEW] OpenTelemetry API로 계측한 새로운 비즈니스 로직
+# OpenTelemetry API로 계측한 비즈니스 로직
 # ---------------------------------------------------------
 
 def process_payment_logic(order_id: str, amount: int):
@@ -31,7 +32,7 @@ def process_payment_logic(order_id: str, amount: int):
 
         return f"Order {order_id} processed"
 
-# [NEW] OTel 로직을 호출하는 새로운 엔드포인트
+# OTel 로직을 호출하는 엔드포인트
 @app.get("/otel-payment/{order_id}")
 def otel_endpoint(order_id: str):
     # 여기서 호출하면 FastAPI의 자동 계측 Span 아래에 OTel Span이 자식으로 붙습니다.
@@ -40,7 +41,7 @@ def otel_endpoint(order_id: str):
 
 
 # ---------------------------------------------------------
-# [EXISTING] 기존 코드 (Datadog 자동 계측 영역)
+# Datadog 자동 계측 영역
 # ---------------------------------------------------------
 
 @app.get("/")
@@ -55,6 +56,51 @@ def trigger_error():
     if random.choice([True, False]):
         raise ValueError("Random error triggered for Datadog!")
     return {"status": "safe"}
+
+
+# ---------------------------------------------------------
+# Datadog 네이티브 API (ddtrace) 계측 예시
+# ---------------------------------------------------------
+
+# 1. 데코레이터 방식 - 비즈니스 로직 커스텀 계측
+@dd_tracer.wrap(name="business.calculate_total")
+def calculate_total(items: list):
+    span = dd_tracer.current_span()
+    if span:
+        span.set_tag("items.count", len(items))
+    time.sleep(0.03)
+    return sum(item.get("price", 0) for item in items)
+
+
+# 2. 데코레이터 함수 호출 예시
+# 호출 시 Span 구조:
+#   └─ fastapi.request (자동 계측)
+#       └─ business.calculate_total (데코레이터로 생성된 자식 span)
+@app.get("/ddtrace-checkout")
+def ddtrace_checkout_endpoint():
+    items = [{"name": "item1", "price": 1000}, {"name": "item2", "price": 2000}]
+    total = calculate_total(items)
+    return {"total": total}
+
+
+# 3. with 문 방식 - 태그/메트릭 활용 예시
+@app.get("/ddtrace-order/{order_id}")
+def ddtrace_order_endpoint(order_id: str):
+    with dd_tracer.trace("business.process_order") as span:
+        # 비즈니스 컨텍스트 태그
+        span.set_tag("order.id", order_id)
+        span.set_tag("order.status", "processing")
+        span.set_tag("payment.method", "credit_card")
+        
+        # 숫자 메트릭 (집계/분석용)
+        amount = random.randint(1000, 50000)
+        span.set_metric("order.amount", amount)
+        span.set_metric("order.item_count", 3)
+        
+        time.sleep(0.1)
+        span.set_tag("order.status", "completed")
+    return {"order_id": order_id, "amount": amount, "status": "completed"}
+
 
 
 
