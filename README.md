@@ -9,6 +9,13 @@ Datadog APM과 OpenTelemetry를 연동한 FastAPI 데모 앱입니다.
 
 ## 실행 방법
 
+1. `.env` 파일 생성
+```bash
+cp .env.example .env
+# .env 파일에 Datadog API 키 입력
+```
+
+2. 컨테이너 실행
 ```bash
 docker-compose up --build
 ```
@@ -55,13 +62,8 @@ curl http://localhost:8000/otel-payment/ORDER-123
 
 ## 주의사항
 
-⚠️ `docker-compose.yaml`의 `DD_API_KEY`가 하드코딩되어 있습니다.  
-실제 운영 시에는 환경변수나 시크릿 관리 도구를 사용하세요.
-
-```bash
-# 예시: 환경변수로 API Key 전달
-DD_API_KEY=your_key docker-compose up --build
-```
+⚠️ `.env` 파일에 Datadog API 키를 설정해야 합니다.  
+`.env` 파일은 `.gitignore`에 포함되어 있어 git에 올라가지 않습니다.
 
 ## 프로젝트 구조
 
@@ -71,5 +73,7 @@ DD_API_KEY=your_key docker-compose up --build
 ├── Dockerfile           # 컨테이너 빌드 설정
 ├── docker-compose.yaml  # 멀티 컨테이너 구성
 ├── requirements.txt     # Python 의존성
+├── .env.example         # 환경변수 템플릿
+├── .gitignore           # Git 제외 파일 목록
 └── README.md            # 이 문서
 ```
