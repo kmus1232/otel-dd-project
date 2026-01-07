@@ -2,7 +2,11 @@ version: '3'
 services:
   # 1. FastAPI 앱 서비스
   fastapi-app:
-    build: .
+    build:
+      context: .
+      args:
+        DD_GIT_REPOSITORY_URL: ${DD_GIT_REPOSITORY_URL:-}
+        DD_GIT_COMMIT_SHA: ${DD_GIT_COMMIT_SHA:-}
     ports:
       - "8000:8000"
     environment:
