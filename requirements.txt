@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+ddtrace
+requests
+opentelemetry-api
