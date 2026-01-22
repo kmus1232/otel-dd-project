@@ -15,27 +15,37 @@ app = FastAPI()
 # OpenTelemetry API로 계측한 비즈니스 로직
 # ---------------------------------------------------------
 
+# 1. 데코레이터 방식 - 함수에 span 자동 생성
+@otel_tracer.start_as_current_span("otel.decorator_test")
+def otel_decorator_test():
+    span = trace.get_current_span()  # 현재 span 가져오기
+    span.set_attribute("test", "true")
+    time.sleep(0.1)
+
+# 데코레이터 함수 호출 엔드포인트
+@app.get("/otel-decorator")
+def otel_decorator_endpoint():
+    otel_decorator_test()  # 호출 시 자동으로 span 생성
+    return {"result": "Decorator test completed"}
+
+# 2. with 문 방식 - 중첩 span 예시
 def process_payment_logic(order_id: str, amount: int):
-    # 'start_as_current_span'을 사용해 OTel Span 생성
     with otel_tracer.start_as_current_span("business.payment_processing") as span:
-        # 1. OTel 스타일 Attribute 추가 (Datadog Tag로 변환됨)
         span.set_attribute("order.id", order_id)
         span.set_attribute("payment.amount", amount)
         span.set_attribute("payment.method", "credit_card")
-        
-        time.sleep(0.2) # 작업 시뮬레이션
+        time.sleep(0.2)
 
-        # 2. 하위 Span 생성 (Nested Span)
+        # 하위 span 생성 (부모-자식 관계)
         with otel_tracer.start_as_current_span("business.validate_card") as child_span:
             time.sleep(0.1)
             child_span.set_attribute("validation.status", "ok")
 
         return f"Order {order_id} processed"
 
-# OTel 로직을 호출하는 엔드포인트
+# with 문 방식 호출 엔드포인트
 @app.get("/otel-payment/{order_id}")
 def otel_endpoint(order_id: str):
-    # 여기서 호출하면 FastAPI의 자동 계측 Span 아래에 OTel Span이 자식으로 붙습니다.
     result = process_payment_logic(order_id, random.randint(1000, 50000))
     return {"result": result}
 
@@ -46,13 +56,11 @@ def otel_endpoint(order_id: str):
 
 @app.get("/")
 def read_root():
-    # 처리 시간 시뮬레이션
     time.sleep(random.uniform(0.1, 0.5))
     return {"Hello": "Datadog APM"}
 
 @app.get("/error")
 def trigger_error():
-    # 에러 트래킹 테스트용
     if random.choice([True, False]):
         raise ValueError("Random error triggered for Datadog!")
     return {"status": "safe"}
@@ -71,7 +79,6 @@ def calculate_total(items: list):
     time.sleep(0.03)
     return sum(item.get("price", 0) for item in items)
 
-
 # 2. 데코레이터 함수 호출 예시
 # 호출 시 Span 구조:
 #   └─ fastapi.request (자동 계측)
@@ -82,17 +89,30 @@ def ddtrace_checkout_endpoint():
     total = calculate_total(items)
     return {"total": total}
 
+# 3. service 파라미터로 커스텀 서비스명 지정
+@dd_tracer.wrap(service="my-sandwich-making-svc", resource="make_sandwich")
+def make_sandwich(sandwich_type: str):
+    """이 함수는 "my-sandwich-making-svc"라는 별도 서비스로 표시됩니다"""
+    span = dd_tracer.current_span()
+    if span:
+        span.set_tag("sandwich.type", sandwich_type)
+        span.set_tag("sandwich.status", "preparing")
+    time.sleep(0.15)
+    return f"{sandwich_type} sandwich ready!"
 
-# 3. with 문 방식 - 태그/메트릭 활용 예시
+@app.get("/ddtrace-sandwich/{sandwich_type}")
+def ddtrace_sandwich_endpoint(sandwich_type: str):
+    result = make_sandwich(sandwich_type)
+    return {"result": result, "service": "my-sandwich-making-svc"}
+
+# 4. with 문 방식 - 태그/메트릭 활용 예시
 @app.get("/ddtrace-order/{order_id}")
 def ddtrace_order_endpoint(order_id: str):
     with dd_tracer.trace("business.process_order") as span:
-        # 비즈니스 컨텍스트 태그
         span.set_tag("order.id", order_id)
         span.set_tag("order.status", "processing")
         span.set_tag("payment.method", "credit_card")
         
-        # 숫자 메트릭 (집계/분석용)
         amount = random.randint(1000, 50000)
         span.set_metric("order.amount", amount)
         span.set_metric("order.item_count", 3)
@@ -102,9 +122,5 @@ def ddtrace_order_endpoint(order_id: str):
     return {"order_id": order_id, "amount": amount, "status": "completed"}
 
 
-
-
-
 if __name__ == "__main__":
-    # 호스트 0.0.0.0 설정 중요
     uvicorn.run(app, host="0.0.0.0", port=8000)
